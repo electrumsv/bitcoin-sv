@@ -54,6 +54,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/math/distributions/poisson.hpp>
 #include <boost/range/adaptor/reversed.hpp>
@@ -64,6 +65,8 @@
 #endif
 
 using namespace mining;
+
+using namespace boost::placeholders;
 
 /**
  * Global state
@@ -470,11 +473,11 @@ bool CheckSequenceLocks(
     return EvaluateSequenceLocks(index, lockPair);
 }
 
-uint64_t GetSigOpCountWithoutP2SH(const CTransaction &tx, bool isGenesisEnabled, bool& sigOpCountError) 
+uint64_t GetSigOpCountWithoutP2SH(const CTransaction &tx, bool isGenesisEnabled, bool& sigOpCountError)
 {
     sigOpCountError = false;
     uint64_t nSigOps = 0;
-    for (const auto &txin : tx.vin) 
+    for (const auto &txin : tx.vin)
     {
         // After Genesis, this should return 0, since only push data is allowed in input scripts:
         nSigOps += txin.scriptSig.GetSigOpCount(false, isGenesisEnabled, sigOpCountError);
@@ -484,7 +487,7 @@ uint64_t GetSigOpCountWithoutP2SH(const CTransaction &tx, bool isGenesisEnabled,
         }
     }
 
-    for (const auto &txout : tx.vout) 
+    for (const auto &txout : tx.vout)
     {
         nSigOps += txout.scriptPubKey.GetSigOpCount(false, isGenesisEnabled, sigOpCountError);
         if (sigOpCountError)
@@ -527,11 +530,11 @@ uint64_t GetP2SHSigOpCount(const Config &config,
     return nSigOps;
 }
 
-uint64_t GetTransactionSigOpCount(const Config &config, 
+uint64_t GetTransactionSigOpCount(const Config &config,
                                   const CTransaction &tx,
-                                  const CCoinsViewCache &inputs, 
+                                  const CCoinsViewCache &inputs,
                                   bool checkP2SH,
-                                  bool isGenesisEnabled, 
+                                  bool isGenesisEnabled,
                                   bool& sigOpCountError) {
     sigOpCountError = false;
     uint64_t nSigOps = GetSigOpCountWithoutP2SH(tx, isGenesisEnabled, sigOpCountError);
@@ -624,7 +627,7 @@ bool CheckRegularTransaction(const CTransaction &tx, CValidationState &state, ui
     if (tx.IsCoinBase()) {
         return state.DoS(100, false, REJECT_INVALID, "bad-tx-coinbase");
     }
-    
+
     if (!CheckTransactionCommon(tx, state, maxTxSigOpsCountConsensusBeforeGenesis, maxTxSizeConsensus, isGenesisEnabled)) {
         // CheckTransactionCommon fill in the state.
         return false;
@@ -634,10 +637,10 @@ bool CheckRegularTransaction(const CTransaction &tx, CValidationState &state, ui
     {
         bool hasP2SHOutput = std::any_of(tx.vout.begin(), tx.vout.end(), 
             [](const CTxOut& o){ 
-                return IsP2SH(o.scriptPubKey); 
+                return IsP2SH(o.scriptPubKey);
             }
         );
-        
+
         if(hasP2SHOutput)
         {
             return state.DoS(100, false, REJECT_INVALID, "bad-txns-vout-p2sh");
@@ -768,12 +771,12 @@ static std::optional<bool> CheckInputsFromMempoolAndCache(
     }
 
     // For Consenus parameter false is used because we already use policy rules in first CheckInputs call
-    // from TxnValidation function that is called before this one, and if that call succeeds then we 
+    // from TxnValidation function that is called before this one, and if that call succeeds then we
     // can use policy rules again but with different flags now
     return CheckInputs(
                 token,
                 config,
-                false,          
+                false,
                 tx,
                 state,
                 view,
@@ -1081,15 +1084,15 @@ CTxnValResult TxnValidation(
     CValidationState state;
     std::vector<COutPoint> vCoinsToUncache {};
 
-    // First check against consensus limits. If this check fails, then banscore will be increased. 
+    // First check against consensus limits. If this check fails, then banscore will be increased.
     // We re-test the transaction with policy rules later in this method (without banning if rules are violated)
     bool isGenesisEnabled = IsGenesisEnabled(config, chainActive.Height() + 1);
     uint64_t maxTxSigOpsCountConsensusBeforeGenesis = config.GetMaxTxSigOpsCountConsensusBeforeGenesis();
     uint64_t maxTxSizeConsensus = config.GetMaxTxSize(isGenesisEnabled, true);
     // Coinbase is only valid in a block, not as a loose transaction.
-    if (!CheckRegularTransaction(tx, state, maxTxSigOpsCountConsensusBeforeGenesis, maxTxSizeConsensus, isGenesisEnabled)) 
+    if (!CheckRegularTransaction(tx, state, maxTxSigOpsCountConsensusBeforeGenesis, maxTxSizeConsensus, isGenesisEnabled))
     {
-        // We will re-check the transaction if we are in Genesis gracefull period, to check if genesis rules would 
+        // We will re-check the transaction if we are in Genesis gracefull period, to check if genesis rules would
         // allow this script transaction to be accepted. If it is valid under Genesis rules, we only reject it
         // without adding banscore
         bool isGenesisGracefulPeriod = IsGenesisGracefulPeriod(config, chainActive.Height() + 1);
@@ -1119,8 +1122,8 @@ CTxnValResult TxnValidation(
     // Rather not work on nonstandard transactions (unless -testnet/-regtest)
     // We determine if a transaction is standard or not based on assumption that
     // it will be mined in the next block. We accept the fact that it might get mined
-    // into a later block and thus can become non standard transaction. 
-    // Example: Transaction containing output with "OP_RETURN" and 0 value 
+    // into a later block and thus can become non standard transaction.
+    // Example: Transaction containing output with "OP_RETURN" and 0 value
     //          is not dust under old rules, but it is dust under new rules,
     //          but we will mine it nevertheless. Anyone can collect such
     //          coin by providing OP_1 unlock script
@@ -1397,7 +1400,7 @@ CTxnValResult TxnValidation(
         return Result{state, pTxInputData, vCoinsToUncache};
     }
 
-    // We are getting flags as they would be if the utxos are before genesis. 
+    // We are getting flags as they would be if the utxos are before genesis.
     // "CheckInputs" is adding specific flags for each input based on its height in the main chain
     uint32_t scriptVerifyFlags = GetScriptVerifyFlags(config, IsGenesisEnabled(config, chainActive.Height() + 1));
     // Check against previous transactions. This is done last to help
@@ -2284,7 +2287,7 @@ bool GetTransaction(const Config &config, const TxId &txid,
 
 /**
  * Returns size of the header for each block in a block file based on block size.
- * This method replaces BLOCKFILE_BLOCK_HEADER_SIZE because we need 64 bit number 
+ * This method replaces BLOCKFILE_BLOCK_HEADER_SIZE because we need 64 bit number
  * to store block size for blocks equal or larger than 32 bit max number.
  */
 unsigned int GetBlockFileBlockHeaderSize(uint64_t nBlockSize)
@@ -2295,11 +2298,11 @@ unsigned int GetBlockFileBlockHeaderSize(uint64_t nBlockSize)
     }
     else
     {
-        return 8; // 4 bytes disk magic + 4 bytes block size 
+        return 8; // 4 bytes disk magic + 4 bytes block size
     }
 }
 
-/** 
+/**
  * Write index header. If size larger thant 32 bit max than write 32 bit max and 64 bit size.
  * 32 bit max (0xFFFFFFFF) indicates that there is 64 bit size value following.
  */
@@ -2330,8 +2333,8 @@ static bool WriteBlockToDisk(
     }
 
     // Write index header.
-    WriteIndexHeader(fileout, messageStart, GetSerializeSize(fileout, block));    
-    
+    WriteIndexHeader(fileout, messageStart, GetSerializeSize(fileout, block));
+
     // Write block
     long fileOutPos = ftell(fileout.Get());
     if (fileOutPos < 0) {
@@ -2511,7 +2514,7 @@ std::unique_ptr<CForwardReadonlyStream> StreamSyncBlockFromDisk(CBlockIndex& ind
                 CFileReader{std::move(file)});
     }
 
-    return 
+    return
         std::make_unique<CBlockStream<CFileReader>>(
             CFileReader{std::move(file)},
             CStreamVersionAndType{SER_DISK, CLIENT_VERSION},
@@ -2585,7 +2588,7 @@ std::map<const CBlockIndex*, const CBlockIndex*> safeModeForks;
 static CCriticalSection cs_safeModeLevelForks;
 
 /**
- * Finds fork base of a given fork tip. 
+ * Finds fork base of a given fork tip.
  * Returns nullptr if pindexForkTip is not connected to main chain
  */
 const CBlockIndex* FindForkBase(const CBlockIndex* pindexForkTip)
@@ -2626,7 +2629,7 @@ bool IsBlockPartOfExistingSafeModeFork(const CBlockIndex* pindexNew)
 {
     AssertLockHeld(cs_safeModeLevelForks);
 
-    // if we received only header then block is not yet part of the fork 
+    // if we received only header then block is not yet part of the fork
     // so check only for blocks with data
     if (pindexNew->nStatus.hasData())
     {
@@ -2671,14 +2674,14 @@ void CheckForkForInvalidBlocks(CBlockIndex* pindexForkTip)
  * Method checks if fork should cause node to enter safe mode.
  *
  * @param[in]      pindexForkTip  Tip of the fork that we are validating.
- * @param[in]      pindexForkBase Base of the fork (point where this fork split from active chain). 
+ * @param[in]      pindexForkBase Base of the fork (point where this fork split from active chain).
  *                                It must be (indirect) parent of pindexForkTip or nullptr if
  *                                pindexForkTip is not connected to main chain.
  * @return Returns level of safe mode that this fork triggers:
- *         NONE    - fork is not triggering safe mode or we called this with pindexForkTip 
+ *         NONE    - fork is not triggering safe mode or we called this with pindexForkTip
  *         UNKNOWN - fork trigger safe mode but we don't know yet if this fork is valid or invalid;
  *                   we probably only have block headers
- *         INVALID - fork that triggers safe mode is marked as invalid but we should still warn 
+ *         INVALID - fork that triggers safe mode is marked as invalid but we should still warn
  *                   because we could be using old version of node
  *         VALID   - fork that triggers safe mode is valid
  */
@@ -2783,7 +2786,7 @@ void CheckSafeModeParameters(const CBlockIndex* pindexNew)
 
     if (chainActive.Tip() == pindexNew->pprev || chainActive.Contains(pindexNew) || IsBlockPartOfExistingSafeModeFork(pindexNew))
     {
-        // When we are extending active chain or updating any of the forks or main chain 
+        // When we are extending active chain or updating any of the forks or main chain
         // then only check all existing forks if we should stay in safe mode. If block is part
         // of existing safe mode fork than check whole fork (and all other forks) not just
         // from fork base to pindexNew
@@ -2823,7 +2826,7 @@ void CheckSafeModeParameters(const CBlockIndex* pindexNew)
         }
         else
         {
-            // This fork does not cause safe mode so check if any of 
+            // This fork does not cause safe mode so check if any of
             // existing forks still cause safe mode
             checkExistingForks = true;
         }
@@ -2890,7 +2893,7 @@ void CheckSafeModeParametersForAllForksOnStartup()
 
     for (auto& tip :setTips)
     {
-        // This is needed because older versions of node did not correctly 
+        // This is needed because older versions of node did not correctly
         // mark descendants of an invalid block on forks.
         if (!tip->nStatus.isInvalid() && tip->nChainTx == 0)
         {
@@ -2900,7 +2903,7 @@ void CheckSafeModeParametersForAllForksOnStartup()
         // Restore global safe mode state,
         CheckSafeModeParameters(tip);
     }
-    LogPrintf("%s: global safe mode state restored to level %d in %dms\n", 
+    LogPrintf("%s: global safe mode state restored to level %d in %dms\n",
               __func__, static_cast<int>(GetSafeModeLevel()),
               GetTimeMillis() - nStart);
 }
@@ -3061,12 +3064,12 @@ std::optional<bool> CheckInputs(
 
     const auto [ spendHeight, mtp ] = GetSpendHeightAndMTP(inputs);
     (void)mtp;  // Silence unused variable warning
-    if (!Consensus::CheckTxInputs(tx, state, inputs, spendHeight)) 
+    if (!Consensus::CheckTxInputs(tx, state, inputs, spendHeight))
     {
         return false;
     }
 
-    if (pvChecks) 
+    if (pvChecks)
     {
         pvChecks->reserve(tx.vin.size());
     }
@@ -3080,7 +3083,7 @@ std::optional<bool> CheckInputs(
     // block merkle hashes are still computed and checked, of course, if an
     // assumed valid block is invalid due to false scriptSigs this optimization
     // would allow an invalid chain to be accepted.
-    if (!fScriptChecks) 
+    if (!fScriptChecks)
     {
         return true;
     }
@@ -3090,12 +3093,12 @@ std::optional<bool> CheckInputs(
     // transaction hash which is in tx's prevouts properly commits to the
     // scriptPubKey in the inputs view of that transaction).
     uint256 hashCacheEntry = GetScriptCacheKey(tx, flags);
-    if (IsKeyInScriptCache(hashCacheEntry, !scriptCacheStore)) 
+    if (IsKeyInScriptCache(hashCacheEntry, !scriptCacheStore))
     {
         return true;
     }
 
-    for (size_t i = 0; i < tx.vin.size(); i++) 
+    for (size_t i = 0; i < tx.vin.size(); i++)
     {
         const COutPoint &prevout = tx.vin[i].prevout;
         const Coin &coin = inputs.AccessCoin(prevout);
@@ -3122,7 +3125,7 @@ std::optional<bool> CheckInputs(
         // Verify signature
         CScriptCheck check(config, consensus, scriptPubKey, amount, tx, i, flags | perInputScriptFlags, sigCacheStore,
                            txdata);
-        if (pvChecks) 
+        if (pvChecks)
         {
             pvChecks->push_back(std::move(check));
         }
@@ -3152,7 +3155,7 @@ std::optional<bool> CheckInputs(
                 // and non-upgraded nodes.
                 // FIXME: CORE-257 has to check if genesis check is necessary also in check2
                 uint32_t flags2Check = flags | perInputScriptFlags;
-                // Consensus flag is set to true, because we check policy rules in check1. If we would test policy rules 
+                // Consensus flag is set to true, because we check policy rules in check1. If we would test policy rules
                 // again and fail because the transaction exceeds our policy limits, the node would get banned and this is not ok
                 CScriptCheck check2(
                     config, true,
@@ -3167,7 +3170,7 @@ std::optional<bool> CheckInputs(
                 {
                     return state.Invalid(false, REJECT_NONSTANDARD,
                             strprintf("non-mandatory-script-verify-flag (%s)", ScriptErrorString(check.GetScriptError())));
-                } 
+                }
                 else if (genesisGracefulPeriod)
                 {
                     uint32_t flags3Check = flags2Check ^ SCRIPT_UTXO_AFTER_GENESIS;
@@ -3182,7 +3185,7 @@ std::optional<bool> CheckInputs(
                     {
                         return {};
                     }
-                    else if (res3.value()) 
+                    else if (res3.value())
                     {
                         return state.Invalid(false, REJECT_NONSTANDARD,
                             strprintf("genesis-script-verify-flag-failed (%s)", ScriptErrorString(check.GetScriptError())));
@@ -3203,7 +3206,7 @@ std::optional<bool> CheckInputs(
         }
     }
 
-    if (scriptCacheStore && !pvChecks) 
+    if (scriptCacheStore && !pvChecks)
     {
         // We executed all of the provided scripts, and were told to cache the
         // result. Do so now.
@@ -3224,7 +3227,7 @@ bool UndoWriteToDisk(const CBlockUndo &blockundo, CDiskBlockPos &pos,
         return error("%s: OpenUndoFile failed", __func__);
     }
 
-    // Write index header. 
+    // Write index header.
     WriteIndexHeader(fileout, messageStart, GetSerializeSize(fileout, blockundo));
 
     // Write undo data
@@ -4072,7 +4075,7 @@ bool FlushStateToDisk(
                 // Then update all block file information (which may refer to
                 // block and undo files).
                 {
-                    
+
                     std::vector<std::pair<int, const CBlockFileInfo *>> vFiles = pBlockFileInfoStore->GetAndClearDirtyFileInfo();
                     std::vector<const CBlockIndex *> vBlocks;
                     vBlocks.reserve(setDirtyBlockIndex.size());
@@ -4542,7 +4545,7 @@ static CBlockIndex *FindMostWorkChain() {
             // to a chain unless we have all the non-active-chain parent blocks.
             bool fInvalidChain = pindexTest->nStatus.isInvalid();
             bool fMissingData = !pindexTest->nStatus.hasData();
-            if (fInvalidChain || fMissingData) 
+            if (fInvalidChain || fMissingData)
             {
                 if (fInvalidChain)
                 {
@@ -4961,7 +4964,7 @@ bool ActivateBestChain(
                     GetMainSignals().BlockConnected(trace.pblock, trace.pindex,
                                                     *trace.conflictedTxs);
                 }
-                
+
                 if (pindexNewTip)
                 {
                     // check if new tip affects safe mode
@@ -5126,7 +5129,7 @@ bool InvalidateBlock(const Config &config, CValidationState &state,
     else
     {
         // in case of invalidating block that is not on active chain make sure
-        // that we mark all its descendants (whole chain) as invalid 
+        // that we mark all its descendants (whole chain) as invalid
         InvalidateChain(pindex);
     }
 
@@ -5172,13 +5175,13 @@ void InvalidateBlocksFromConfig(const Config &config)
                 LogPrintf("Block %s that is marked as invalid is not found.\n", invalidBlockHash.GetHex());
                 continue;
             }
-                
+
             CBlockIndex *pblockindex = mapBlockIndex[invalidBlockHash];
             LogPrintf("Invalidating Block %s.\n", invalidBlockHash.GetHex());
             InvalidateBlock(config, state, pblockindex);
         }
-                
-        if (!state.IsValid()) 
+
+        if (!state.IsValid())
         {
             LogPrintf("Problem when invalidating block: %s.\n",state.GetRejectReason());
         }
@@ -5281,8 +5284,8 @@ void InvalidateChain(const CBlockIndex* pindexNew)
     // Collect blocks that are not part of currently active chain
     for (const std::pair<const uint256, CBlockIndex*>& item : mapBlockIndex)
     {
-        // Tip candidates are only blocks above invalid block 
-        // If we are invalid block is not on active chain than we 
+        // Tip candidates are only blocks above invalid block
+        // If we are invalid block is not on active chain than we
         // need only fork tips not active tip
         if (item.second->nHeight > pindexNew->nHeight &&
             (isInvalidBlockOnActiveChain || !chainActive.Contains(item.second)))
@@ -5328,8 +5331,8 @@ bool CheckBlockTTOROrder(const CBlock& block)
     std::set<TxId> usedInputs;
     for (const auto& tx : block.vtx)
     {
-        // If current transactions is found after another transaction 
-        // that spends any output of current transaction, then the block 
+        // If current transactions is found after another transaction
+        // that spends any output of current transaction, then the block
         // violates TTOR order.
         if (usedInputs.find(tx->GetId()) != usedInputs.end())
         {
@@ -5483,7 +5486,7 @@ bool CheckBlock(const Config &config, const CBlock &block,
     // Size limits.
     auto nMaxBlockSize = config.GetMaxBlockSize();
 
-    // Bail early if there is no way this block is of reasonable size.  
+    // Bail early if there is no way this block is of reasonable size.
     if ( MIN_TRANSACTION_SIZE > 0 && block.vtx.size () > (nMaxBlockSize/MIN_TRANSACTION_SIZE)){
         return state.DoS(100, false, REJECT_INVALID, "bad-blk-length", "size limits failed");
     }
@@ -5729,8 +5732,8 @@ static bool ContextualCheckBlock(const Config &config, const CBlock &block,
     }
 
     // Check if block has the right size. Maximum accepted block size changes
-    // according to predetermined schedule unless user has overriden this by 
-    // specifying -excessiveblocksize command line parameter 
+    // according to predetermined schedule unless user has overriden this by
+    // specifying -excessiveblocksize command line parameter
     const int64_t nMedianTimePast =
         pindexPrev == nullptr ? 0 : pindexPrev->GetMedianTimePast();
 
@@ -5783,7 +5786,7 @@ static bool ContextualCheckBlock(const Config &config, const CBlock &block,
 }
 
 /**
- * If found, returns an index of a previous block. 
+ * If found, returns an index of a previous block.
  */
 static const CBlockIndex* FindPreviousBlockIndex(const CBlockHeader &block, CValidationState &state)
 {
@@ -5820,7 +5823,7 @@ static bool AcceptBlockHeader(const Config &config, const CBlockHeader &block,
     const CChainParams &chainparams = config.GetChainParams();
 
     uint256 hash = block.GetHash();
-    
+
     if (config.IsBlockInvalidated(hash))
     {
         return state.Invalid(error("%s: block %s is marked as invalid from command line",
@@ -6081,7 +6084,7 @@ bool VerifyNewBlock(const Config &config,
 
     {
         LOCK(cs_main);
-        
+
         pindexPrev = FindPreviousBlockIndex(*pblock, state);
         if (!pindexPrev)
         {
@@ -6946,7 +6949,7 @@ bool InitBlockIndex(const Config &config) {
 
 void ReindexAllBlockFiles(const Config &config, CBlockTreeDB *pblocktree, bool& fReindex)
 {
-    
+
     int nFile = 0;
     while (true) {
         CDiskBlockPos pos(nFile, 0);
