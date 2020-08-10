@@ -18,7 +18,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/signals2/signal.hpp>
 
 #include <event2/buffer.h>
@@ -26,6 +26,8 @@
 #include <event2/event.h>
 #include <event2/thread.h>
 #include <event2/util.h>
+
+using namespace boost::placeholders;
 
 /** Default control port */
 const std::string DEFAULT_TOR_CONTROL = "127.0.0.1:9051";
