@@ -30,6 +30,8 @@
 #include <set>
 #include <unordered_map>
 
+using namespace boost::placeholders;
+
 static bool fRPCRunning = false;
 static bool fRPCInWarmup = true;
 static std::string rpcWarmupStatus("RPC server started");
